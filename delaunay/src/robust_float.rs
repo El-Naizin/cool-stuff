@@ -2,6 +2,8 @@ use core::f64;
 use robust;
 use std::fmt::Display;
 
+const EPSILON: f64 = f64::EPSILON * 2.;
+
 /// Points have top-right x,y coordinates:
 /// 0,0 ------- 1,0
 ///  |           |
@@ -10,8 +12,8 @@ use std::fmt::Display;
 /// 0,1 ------- 1,1
 #[derive(Copy, Clone, Debug, PartialEq, Default)]
 pub struct Point2 {
-    x: f64,
-    y: f64,
+    pub x: f64,
+    pub y: f64,
 }
 
 impl Display for Point2 {
@@ -27,20 +29,44 @@ impl From<&Point2> for robust::Coord<f64> {
 }
 
 #[inline(always)]
+pub fn nearly_equals(a: &Point2, b: &Point2) -> bool {
+    (a.x - b.x).abs() <= EPSILON && (a.y - b.y).abs() <= EPSILON
+}
+
+#[inline(always)]
 pub fn in_circle(a: &Point2, b: &Point2, c: &Point2, d: &Point2) -> bool {
     robust::incircle(a.into(), b.into(), c.into(), d.into()) < 0.
 }
 
 #[inline(always)]
 pub fn counter_clockwise(a: &Point2, b: &Point2, c: &Point2) -> bool {
-    // println!(
-    //     "{} {} {}: {}",
-    //     a,
-    //     b,
-    //     c,
-    //     robust::orient2d(a.into(), b.into(), c.into())
-    // );
     robust::orient2d(a.into(), b.into(), c.into()) < 0.
+}
+
+pub fn sort_points(points: &mut Vec<Point2>) {
+    points.sort_by(|a, b| match a.x.partial_cmp(&b.x) {
+        Some(ord) => match ord {
+            std::cmp::Ordering::Equal => a.y.partial_cmp(&b.y).unwrap(),
+            x => x,
+        },
+        None => a.y.partial_cmp(&b.y).unwrap(),
+    });
+}
+
+fn remove_near_equal_points(points: &mut Vec<Point2>) {
+    let mut idx = 0;
+    while idx < points.len() - 1 {
+        if nearly_equals(&points[idx], &points[idx + 1]) {
+            points.remove(idx);
+        } else {
+            idx += 1;
+        }
+    }
+}
+
+pub fn sanitize_points_vec(points: &mut Vec<Point2>) {
+    sort_points(points);
+    remove_near_equal_points(points);
 }
 
 #[cfg(test)]
@@ -71,5 +97,28 @@ mod tests {
         assert_eq!(counter_clockwise(&b, &c, &a), true);
         assert_eq!(counter_clockwise(&e, &c, &a), true);
         assert_eq!(counter_clockwise(&e, &d, &a), false);
+    }
+
+    #[test]
+    fn test_remove_near_equal_points() {
+        let mut points = vec![
+            Point2 { x: 0., y: 1. },
+            Point2 { x: 0., y: 1. },
+            Point2 { x: 1., y: 1. },
+            Point2 { x: 3., y: 1. },
+            Point2 { x: 3., y: 1. },
+            Point2 { x: 3., y: 2. },
+        ];
+
+        sanitize_points_vec(&mut points);
+        assert_eq!(
+            points,
+            vec![
+                Point2 { x: 0., y: 1. },
+                Point2 { x: 1., y: 1. },
+                Point2 { x: 3., y: 1. },
+                Point2 { x: 3., y: 2. },
+            ]
+        );
     }
 }

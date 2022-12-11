@@ -4,10 +4,10 @@ use std::ptr::addr_of_mut;
 
 use id_arena::{Arena, Id};
 
-use crate::robust_float::Point2;
+use crate::robust_float::{counter_clockwise, Point2};
 
 type QuadEdgeId = Id<QuadEdge>;
-type QuadEdgeArena = Arena<QuadEdge>;
+pub type QuadEdgeArena = Arena<QuadEdge>;
 
 #[derive(Copy, Clone, Debug)]
 pub struct EdgeRef {
@@ -31,6 +31,7 @@ pub struct QuadEdge {
 /// Create a QuadEdge allocated in the QuadEdgeArena, initialise the Edges of the QuadEdge with default
 /// 0.0, 0.0 origin positions, and good edge_ref default values
 ///
+#[allow(invalid_value)]
 pub fn make_edge(quad_arena: &mut QuadEdgeArena) -> EdgeRef {
     let quad_id = quad_arena.alloc(unsafe { MaybeUninit::<QuadEdge>::uninit().assume_init() });
     let quad_ptr = quad_arena.get_mut(quad_id).unwrap();
@@ -182,6 +183,15 @@ impl fmt::Display for EdgeRef {
     }
 }
 
+impl QuadEdge {
+    pub fn get_points(&self) -> Option<(Point2, Point2)> {
+        if self.deleted {
+            return None;
+        }
+        Some((self.edges[0].origin, self.edges[2].origin))
+    }
+}
+
 pub fn splice(quad_arena: &mut QuadEdgeArena, a: EdgeRef, b: EdgeRef) {
     let alpha = a.onext(&quad_arena).rot();
     let beta = b.onext(&quad_arena).rot();
@@ -224,6 +234,23 @@ pub fn delete_edge(quad_arena: &mut QuadEdgeArena, edge: EdgeRef) {
     quad_edge.deleted = true;
 }
 
+/// Return true if point is strictly on the left side of the directed edge
+#[inline(always)]
+pub fn left_of(quad_arena: &QuadEdgeArena, point: &Point2, edge: EdgeRef) -> bool {
+    counter_clockwise(&point, &edge.org(quad_arena), &edge.dest(quad_arena))
+}
+
+/// Return true if point is strictly on the right side of the directed edge
+#[inline(always)]
+pub fn right_of(quad_arena: &QuadEdgeArena, point: &Point2, edge: EdgeRef) -> bool {
+    counter_clockwise(&point, &edge.dest(quad_arena), &edge.org(quad_arena))
+}
+
+/// Return true if the edge is above the left-oriented base edge
+pub fn valid(quad_arena: &QuadEdgeArena, edge: EdgeRef, basel: EdgeRef) -> bool {
+    right_of(&quad_arena, &edge.dest(&quad_arena), basel)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +260,5 @@ mod tests {
         let mut quad_arena = QuadEdgeArena::new();
         let edge_ref = make_edge(&mut quad_arena);
         println!("Edge ref: {}", edge_ref);
-        assert_eq!(1, 1);
     }
 }
